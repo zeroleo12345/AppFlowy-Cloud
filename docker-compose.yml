@@ -58,7 +58,7 @@ services:
       timeout: 5s
       retries: 12
       start_period: 40s
-    image: appflowyinc/gotrue:${GOTRUE_VERSION:-latest}
+    image: appflowyinc/gotrue:${GOTRUE_VERSION}
     environment:
       # There are a lot of options to configure GoTrue. You can reference the example config:
       # https://github.com/supabase/auth/blob/master/example.env
@@ -158,7 +158,7 @@ services:
       # and rely on the whitelist + invitations to gate who can sign up.
       - SIGNUP_WHITELIST_ENABLED=${SIGNUP_WHITELIST_ENABLED:-false}
       - GUEST_INVITES_REQUIRE_ADMIN_APPROVAL=${GUEST_INVITES_REQUIRE_ADMIN_APPROVAL:-false}
-    image: appflowyinc/appflowy_cloud:${APPFLOWY_CLOUD_VERSION:-latest}
+    image: appflowyinc/appflowy_cloud:${APPFLOWY_CLOUD_VERSION}
     healthcheck:
       test: "curl --fail http://127.0.0.1:8000/api/health || exit 1"
       interval: 5s
@@ -172,7 +172,7 @@ services:
 
   admin_frontend:
     restart: on-failure
-    image: appflowyinc/admin_frontend:${APPFLOWY_ADMIN_FRONTEND_VERSION:-latest}
+    image: appflowyinc/admin_frontend:${APPFLOWY_ADMIN_FRONTEND_VERSION}
     environment:
       - APPFLOWY_GOTRUE_BASE_URL=${APPFLOWY_GOTRUE_BASE_URL:-http://gotrue:9999}
       - APPFLOWY_BASE_URL=${APPFLOWY_BASE_URL:-http://appflowy_cloud:8000}
@@ -187,7 +187,7 @@ services:
 
   ai:
     restart: on-failure
-    image: appflowyinc/appflowy_ai:${APPFLOWY_AI_VERSION:-latest}
+    image: appflowyinc/appflowy_ai:${APPFLOWY_AI_VERSION}
     environment:
       - AI_SERVER_PORT=${AI_SERVER_PORT}
       - OPENAI_API_KEY=${AI_OPENAI_API_KEY}
@@ -222,7 +222,7 @@ services:
 
   appflowy_worker:
     restart: on-failure
-    image: appflowyinc/appflowy_worker:${APPFLOWY_WORKER_VERSION:-latest}
+    image: appflowyinc/appflowy_worker:${APPFLOWY_WORKER_VERSION}
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - APPFLOWY_ENVIRONMENT=production
@@ -253,7 +253,7 @@ services:
 
   appflowy_search:
     restart: on-failure
-    image: appflowyinc/appflowy_search:${APPFLOWY_SEARCH_VERSION:-latest}
+    image: appflowyinc/appflowy_search:${APPFLOWY_SEARCH_VERSION}
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - APPFLOWY_SEARCH_HOST=${APPFLOWY_SEARCH_HOST:-[::]}
@@ -307,7 +307,7 @@ services:
 
   appflowy_web:
     restart: on-failure
-    image: appflowyinc/appflowy_web:${APPFLOWY_WEB_VERSION:-latest}
+    image: appflowyinc/appflowy_web:${APPFLOWY_WEB_VERSION}
     depends_on:
       appflowy_cloud:
         condition: service_healthy
