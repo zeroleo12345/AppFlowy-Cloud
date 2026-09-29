@@ -1,25 +1,14 @@
 # Essential services for AppFlowy Cloud
 
 services:
-  nginx:
-    restart: on-failure
-    image: nginx
-    ports:
-      - ${NGINX_PORT:-80}:80   # Disable this if you are using TLS
-      - ${NGINX_TLS_PORT:-443}:443
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/ssl/certificate.crt:/etc/nginx/ssl/certificate.crt
-      - ./nginx/ssl/private_key.key:/etc/nginx/ssl/private_key.key
-
   # You do not need this if you have configured to use your own s3 file storage
   minio:
     restart: on-failure
     image: minio/minio
     environment:
-      - MINIO_BROWSER_REDIRECT_URL=${APPFLOWY_BASE_URL?:err}/minio
-      - MINIO_ROOT_USER=${APPFLOWY_S3_ACCESS_KEY:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${APPFLOWY_S3_SECRET_KEY:-minioadmin}
+      MINIO_BROWSER_REDIRECT_URL: ${APPFLOWY_BASE_URL?:err}/minio
+      MINIO_ROOT_USER: ${APPFLOWY_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${APPFLOWY_S3_SECRET_KEY:-minioadmin}
     command: server /data --console-address ":9001"
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
@@ -27,17 +16,20 @@ services:
       timeout: 20s
       retries: 3
     volumes:
-      - minio_data:/data
+      - ./data/minio/:/data/
+    networks:
+        - container_network_shared
 
   postgres:
     restart: on-failure
     image: pgvector/pgvector:pg16
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
-      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
-      - PGPORT=${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      PGPORT: ${POSTGRES_PORT:-5432}
+      PGDATA: /var/lib/postgresql/data/pgdata
     command: [ "postgres", "-c", "port=${POSTGRES_PORT:-5432}" ]
     healthcheck:
       test: [ "CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}", "-p", "${POSTGRES_PORT:-5432}" ]
@@ -45,11 +37,15 @@ services:
       timeout: 5s
       retries: 12
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres/:/var/lib/postgresql/data/
+    networks:
+        - container_network_shared
 
   redis:
     restart: on-failure
     image: redis
+    networks:
+        - container_network_shared
 
   gotrue:
     restart: on-failure
@@ -62,7 +58,7 @@ services:
       timeout: 5s
       retries: 12
       start_period: 40s
-    image: appflowyinc/gotrue:${GOTRUE_VERSION:-latest}
+    image: appflowyinc/gotrue:${GOTRUE_VERSION}
     environment:
       # There are a lot of options to configure GoTrue. You can reference the example config:
       # https://github.com/supabase/auth/blob/master/example.env
@@ -72,6 +68,8 @@ services:
       # If the user already exists, the update will be skipped.
       - GOTRUE_ADMIN_PASSWORD=${GOTRUE_ADMIN_PASSWORD}
       - GOTRUE_DISABLE_SIGNUP=${GOTRUE_DISABLE_SIGNUP:-false}
+      - GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED=${GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED:-false}
+      - GOTRUE_HOOK_BEFORE_USER_CREATED_URI=${GOTRUE_HOOK_BEFORE_USER_CREATED_URI:-}
       - GOTRUE_SITE_URL=appflowy-flutter://                           # redirected to AppFlowy application
       - GOTRUE_URI_ALLOW_LIST=** # adjust restrict if necessary
       - GOTRUE_JWT_SECRET=${GOTRUE_JWT_SECRET}                        # authentication secret
@@ -114,6 +112,8 @@ services:
       # SAML 2.0 OAuth config
       - GOTRUE_SAML_ENABLED=${GOTRUE_SAML_ENABLED}
       - GOTRUE_SAML_PRIVATE_KEY=${GOTRUE_SAML_PRIVATE_KEY}
+    networks:
+        - container_network_shared
 
   appflowy_cloud:
     restart: on-failure
@@ -130,7 +130,7 @@ services:
       - APPFLOWY_S3_ACCESS_KEY=${APPFLOWY_S3_ACCESS_KEY}
       - APPFLOWY_S3_SECRET_KEY=${APPFLOWY_S3_SECRET_KEY}
       - APPFLOWY_S3_BUCKET=${APPFLOWY_S3_BUCKET}
-      - APPFLOWY_S3_REGION=${APPFLOWY_S3_REGION}
+      - APPFLOWY_S3_REGION=${APPFLOWY_S3_REGION:-}
       - APPFLOWY_S3_PRESIGNED_URL_ENDPOINT=${APPFLOWY_S3_PRESIGNED_URL_ENDPOINT}
       - APPFLOWY_MAILER_SMTP_HOST=${APPFLOWY_MAILER_SMTP_HOST}
       - APPFLOWY_MAILER_SMTP_PORT=${APPFLOWY_MAILER_SMTP_PORT}
@@ -158,7 +158,7 @@ services:
       # and rely on the whitelist + invitations to gate who can sign up.
       - SIGNUP_WHITELIST_ENABLED=${SIGNUP_WHITELIST_ENABLED:-false}
       - GUEST_INVITES_REQUIRE_ADMIN_APPROVAL=${GUEST_INVITES_REQUIRE_ADMIN_APPROVAL:-false}
-    image: appflowyinc/appflowy_cloud:${APPFLOWY_CLOUD_VERSION:-latest}
+    image: appflowyinc/appflowy_cloud:${APPFLOWY_CLOUD_VERSION}
     healthcheck:
       test: "curl --fail http://127.0.0.1:8000/api/health || exit 1"
       interval: 5s
@@ -167,10 +167,12 @@ services:
     depends_on:
       gotrue:
         condition: service_healthy
+    networks:
+        - container_network_shared
 
   admin_frontend:
     restart: on-failure
-    image: appflowyinc/admin_frontend:${APPFLOWY_ADMIN_FRONTEND_VERSION:-latest}
+    image: appflowyinc/admin_frontend:${APPFLOWY_ADMIN_FRONTEND_VERSION}
     environment:
       - APPFLOWY_GOTRUE_BASE_URL=${APPFLOWY_GOTRUE_BASE_URL:-http://gotrue:9999}
       - APPFLOWY_BASE_URL=${APPFLOWY_BASE_URL:-http://appflowy_cloud:8000}
@@ -180,22 +182,24 @@ services:
         condition: service_healthy
       appflowy_cloud:
         condition: service_healthy
+    networks:
+        - container_network_shared
 
   ai:
     restart: on-failure
-    image: appflowyinc/appflowy_ai:${APPFLOWY_AI_VERSION:-latest}
+    image: appflowyinc/appflowy_ai:${APPFLOWY_AI_VERSION}
     environment:
       - AI_SERVER_PORT=${AI_SERVER_PORT}
       - OPENAI_API_KEY=${AI_OPENAI_API_KEY}
       - DEFAULT_AI_MODEL=gpt-4.1-mini # Make sure the model is available in your OpenAI account
       - DEFAULT_AI_COMPLETION_MODEL=gpt-4.1-mini # Make sure the model is available in your OpenAI account
-      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_OPENAI_API_KEY=${AI_AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AI_AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_VERSION=${AI_AZURE_OPENAI_API_VERSION}
       - APPFLOWY_S3_ACCESS_KEY=${APPFLOWY_S3_ACCESS_KEY}
       - APPFLOWY_S3_SECRET_KEY=${APPFLOWY_S3_SECRET_KEY}
       - APPFLOWY_S3_BUCKET=${APPFLOWY_S3_BUCKET}
-      - APPFLOWY_S3_REGION=${APPFLOWY_S3_REGION}
+      - APPFLOWY_S3_REGION=${APPFLOWY_S3_REGION:-}
       - AI_DATABASE_URL=${APPFLOWY_DATABASE_URL}
       - AI_REDIS_URL=${APPFLOWY_REDIS_URI}
       - AI_USE_MINIO=${APPFLOWY_S3_USE_MINIO}
@@ -213,10 +217,12 @@ services:
         condition: service_healthy
       appflowy_cloud:
         condition: service_healthy
+    networks:
+        - container_network_shared
 
   appflowy_worker:
     restart: on-failure
-    image: appflowyinc/appflowy_worker:${APPFLOWY_WORKER_VERSION:-latest}
+    image: appflowyinc/appflowy_worker:${APPFLOWY_WORKER_VERSION}
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - APPFLOWY_ENVIRONMENT=production
@@ -230,7 +236,7 @@ services:
       - APPFLOWY_S3_ACCESS_KEY=${APPFLOWY_S3_ACCESS_KEY}
       - APPFLOWY_S3_SECRET_KEY=${APPFLOWY_S3_SECRET_KEY}
       - APPFLOWY_S3_BUCKET=${APPFLOWY_S3_BUCKET}
-      - APPFLOWY_S3_REGION=${APPFLOWY_S3_REGION}
+      - APPFLOWY_S3_REGION=${APPFLOWY_S3_REGION:-}
       - APPFLOWY_MAILER_SMTP_HOST=${APPFLOWY_MAILER_SMTP_HOST}
       - APPFLOWY_MAILER_SMTP_PORT=${APPFLOWY_MAILER_SMTP_PORT}
       - APPFLOWY_MAILER_SMTP_USERNAME=${APPFLOWY_MAILER_SMTP_USERNAME}
@@ -242,10 +248,12 @@ services:
         condition: service_healthy
       appflowy_cloud:
         condition: service_healthy
+    networks:
+        - container_network_shared
 
   appflowy_search:
     restart: on-failure
-    image: appflowyinc/appflowy_search:${APPFLOWY_SEARCH_VERSION:-latest}
+    image: appflowyinc/appflowy_search:${APPFLOWY_SEARCH_VERSION}
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - APPFLOWY_SEARCH_HOST=${APPFLOWY_SEARCH_HOST:-[::]}
@@ -253,9 +261,9 @@ services:
       - APPFLOWY_SEARCH_DATABASE_URL=${APPFLOWY_DATABASE_URL}
       - APPFLOWY_SEARCH_REDIS_URL=${APPFLOWY_REDIS_URI}
       - AI_OPENAI_API_KEY=${AI_OPENAI_API_KEY}
-      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_OPENAI_API_KEY=${AI_AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AI_AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_VERSION=${AI_AZURE_OPENAI_API_VERSION}
       # S3 / MinIO — required for /api/admin/search/.../rebuild to read collab
       # blobs offloaded by appflowy_cloud. Without these the service falls back
       # to MinIO defaults at localhost:9000 and the rebuild API returns
@@ -265,7 +273,7 @@ services:
       - APPFLOWY_S3_ACCESS_KEY=${APPFLOWY_S3_ACCESS_KEY}
       - APPFLOWY_S3_SECRET_KEY=${APPFLOWY_S3_SECRET_KEY}
       - APPFLOWY_S3_BUCKET=${APPFLOWY_S3_BUCKET}
-      - APPFLOWY_S3_REGION=${APPFLOWY_S3_REGION}
+      - APPFLOWY_S3_REGION=${APPFLOWY_S3_REGION:-}
       - APPFLOWY_BACKGROUND_INDEXER_ENABLED=true
       - APPFLOWY_INDEXER_DATABASE_ENABLED=${APPFLOWY_INDEXER_DATABASE_ENABLED:-false}
       - APPFLOWY_KEYWORD_SEARCH_ENABLED=${APPFLOWY_KEYWORD_SEARCH_ENABLED:-true}
@@ -274,7 +282,7 @@ services:
       - APPFLOWY_KEYWORD_INDEX_DIR=${APPFLOWY_KEYWORD_INDEX_DIR:-/var/lib/appflowy/keyword_index}
       - APPFLOWY_GOTRUE_JWT_SECRET=${GOTRUE_JWT_SECRET}
     volumes:
-      - keyword_index_data:/var/lib/appflowy/keyword_index
+      - ./data/keyword_index_data/:/var/lib/appflowy/keyword_index/
     healthcheck:
       # The runtime image does not ship curl or wget. Bash's /dev/tcp support
       # keeps this an HTTP-level check without adding an image dependency.
@@ -294,10 +302,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+        - container_network_shared
 
   appflowy_web:
     restart: on-failure
-    image: appflowyinc/appflowy_web:${APPFLOWY_WEB_VERSION:-latest}
+    image: appflowyinc/appflowy_web:${APPFLOWY_WEB_VERSION}
     depends_on:
       appflowy_cloud:
         condition: service_healthy
@@ -305,7 +315,11 @@ services:
       - APPFLOWY_BASE_URL=${APPFLOWY_BASE_URL}
       - APPFLOWY_GOTRUE_BASE_URL=${APPFLOWY_BASE_URL}/gotrue
       - APPFLOWY_WS_BASE_URL=${APPFLOWY_WEBSOCKET_BASE_URL}
-volumes:
-  postgres_data:
-  minio_data:
-  keyword_index_data:
+    networks:
+        - container_network_shared
+
+
+networks:
+  container_network_shared:
+    name: container_network_shared
+    external: true
